@@ -19,7 +19,7 @@ class Simulador1PS_GUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Simulador MySS - 1 Puesto de Servicio (Premium)")
-        self.root.geometry("1300x850")
+        self.root.geometry("1420x920")
         self.root.configure(bg=COLOR_BG)
 
         # Variables de estado de simulación
@@ -48,36 +48,45 @@ class Simulador1PS_GUI:
         style.theme_use('clam')
         style.configure("TFrame", background=COLOR_BG)
         style.configure("Card.TFrame", background=COLOR_CARD, relief="flat")
-        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT, font=("Segoe UI", 10))
+        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT, font=("Segoe UI", 11))
         style.configure("Header.TLabel", background=COLOR_CARD, foreground=COLOR_ACCENT, font=("Segoe UI", 12, "bold"))
-        style.configure("Stat.TLabel", background=COLOR_CARD, foreground=COLOR_SUCCESS, font=("Consolas", 16, "bold"))
+        style.configure("Stat.TLabel", background=COLOR_CARD, foreground=COLOR_SUCCESS, font=("Consolas", 18, "bold"))
         
-        style.configure("Treeview", background=COLOR_CARD, foreground=COLOR_TEXT, fieldbackground=COLOR_CARD, borderwidth=0, rowheight=25)
+        # Estilos avanzados y espaciados para Treeview bajo el tema 'clam'
+        style.configure("Treeview.Heading", background="#2C2C2C", foreground=COLOR_ACCENT, font=("Segoe UI", 11, "bold"), relief="flat")
+        style.map("Treeview.Heading", background=[('active', "#3C3C3C")])
+        style.configure("Treeview", background=COLOR_CARD, foreground=COLOR_TEXT, fieldbackground=COLOR_CARD, borderwidth=0, font=("Segoe UI", 11), rowheight=32)
         style.map('Treeview', background=[('selected', COLOR_ACCENT)])
 
-        self.sidebar = ttk.Frame(self.root, width=350, style="TFrame")
-        self.sidebar.pack(side="left", fill="y", padx=20, pady=20)
+        self.sidebar = ttk.Frame(self.root, style="TFrame")
+        self.sidebar.pack(side="left", fill="y", padx=25, pady=25)
 
         self.main_content = ttk.Frame(self.root, style="TFrame")
-        self.main_content.pack(side="right", expand=True, fill="both", padx=20, pady=20)
+        self.main_content.pack(side="right", expand=True, fill="both", padx=20, pady=25)
 
         # --- Sidebar: Configuración ---
-        ttk.Label(self.sidebar, text="CONFIGURACIÓN & EVENTOS", font=("Segoe UI", 12, "bold"), foreground=COLOR_ACCENT).pack(pady=(0, 20))
+        ttk.Label(self.sidebar, text="CONFIGURACIÓN & EVENTOS", font=("Segoe UI", 13, "bold"), foreground=COLOR_ACCENT).pack(pady=(0, 20))
         
         self.entries = {}
         
-        # Helper para crear fila de input min/max + btn random
+        # Helper para crear fila de input min/max + btn random (Aumentada y estilizada)
         def crear_fila_rango(parent, texto, key_min, key_max, rnd_min_range, rnd_max_range):
             frame = ttk.Frame(parent, style="TFrame")
-            frame.pack(fill="x", pady=5)
-            ttk.Label(frame, text=texto, width=15).pack(side="left")
-            e_min = tk.Entry(frame, width=5, bg=COLOR_CARD, fg=COLOR_TEXT, insertbackground=COLOR_TEXT, relief="flat")
-            e_min.pack(side="left", padx=5)
+            frame.pack(fill="x", pady=8)
+            ttk.Label(frame, text=texto, width=17, font=("Segoe UI", 11)).pack(side="left")
+            
+            e_min = tk.Entry(frame, width=6, bg="#2C2C2C", fg=COLOR_TEXT, insertbackground=COLOR_TEXT, 
+                             relief="flat", bd=0, highlightthickness=1, highlightbackground="#3E3E3E", 
+                             highlightcolor=COLOR_ACCENT, font=("Consolas", 11, "bold"))
+            e_min.pack(side="left", padx=5, ipady=3)
             self.entries[key_min] = e_min
             
-            ttk.Label(frame, text="-").pack(side="left")
-            e_max = tk.Entry(frame, width=5, bg=COLOR_CARD, fg=COLOR_TEXT, insertbackground=COLOR_TEXT, relief="flat")
-            e_max.pack(side="left", padx=5)
+            ttk.Label(frame, text="-", font=("Segoe UI", 11)).pack(side="left")
+            
+            e_max = tk.Entry(frame, width=6, bg="#2C2C2C", fg=COLOR_TEXT, insertbackground=COLOR_TEXT, 
+                             relief="flat", bd=0, highlightthickness=1, highlightbackground="#3E3E3E", 
+                             highlightcolor=COLOR_ACCENT, font=("Consolas", 11, "bold"))
+            e_max.pack(side="left", padx=5, ipady=3)
             self.entries[key_max] = e_max
             
             def rnd():
@@ -88,15 +97,21 @@ class Simulador1PS_GUI:
                 e_min.insert(0, self.format_time(t_min))
                 e_max.insert(0, self.format_time(t_max))
                 
-            tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 8, "bold"), relief="flat").pack(side="right")
+            tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, 
+                      font=("Segoe UI", 9, "bold"), relief="flat", bd=0, 
+                      activebackground=COLOR_SUCCESS, activeforeground=COLOR_BG, cursor="hand2").pack(side="right", padx=(5, 0), ipady=2, ipadx=4)
 
+        # Helper para crear fila simple (Aumentada y estilizada)
         def crear_fila_simple(parent, texto, key, default, rnd_range):
             frame = ttk.Frame(parent, style="TFrame")
-            frame.pack(fill="x", pady=5)
-            ttk.Label(frame, text=texto, width=15).pack(side="left")
-            e = tk.Entry(frame, width=8, bg=COLOR_CARD, fg=COLOR_TEXT, insertbackground=COLOR_TEXT, relief="flat")
+            frame.pack(fill="x", pady=8)
+            ttk.Label(frame, text=texto, width=17, font=("Segoe UI", 11)).pack(side="left")
+            
+            e = tk.Entry(frame, width=14, bg="#2C2C2C", fg=COLOR_TEXT, insertbackground=COLOR_TEXT, 
+                         relief="flat", bd=0, highlightthickness=1, highlightbackground="#3E3E3E", 
+                         highlightcolor=COLOR_ACCENT, font=("Consolas", 11, "bold"))
             e.insert(0, default)
-            e.pack(side="left", padx=5)
+            e.pack(side="left", padx=5, ipady=3)
             self.entries[key] = e
             
             def rnd():
@@ -107,10 +122,12 @@ class Simulador1PS_GUI:
                     t = random.uniform(rnd_range[0] * 60, rnd_range[1] * 60)
                     e.insert(0, self.format_time(t))
                 
-            tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 8, "bold"), relief="flat").pack(side="right", padx=(5, 0))
+            tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, 
+                      font=("Segoe UI", 9, "bold"), relief="flat", bd=0, 
+                      activebackground=COLOR_SUCCESS, activeforeground=COLOR_BG, cursor="hand2").pack(side="right", padx=(5, 0), ipady=2, ipadx=4)
 
         crear_fila_simple(self.sidebar, "Simulación Límite:", "limite", "100.00", (50, 300))
-        ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
+        ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=12)
         
         crear_fila_rango(self.sidebar, "T. Llegada (m):", "lleg_min", "lleg_max", (1, 5), (6, 12))
         self.entries['lleg_min'].insert(0, "3.00")
@@ -128,25 +145,27 @@ class Simulador1PS_GUI:
         self.entries['desc_min'].insert(0, "5.00")
         self.entries['desc_max'].insert(0, "15.00")
         
-        ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
+        ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=12)
         crear_fila_simple(self.sidebar, "Paciencia Cola (m):", "paciencia", "10.00", (5, 20))
         crear_fila_simple(self.sidebar, "Cola Inicial:", "cola_inicial", "0", (0, 10))
         crear_fila_simple(self.sidebar, "T. Traslado ZS (m):", "traslado_zs", "0.10", (0.05, 0.5))
         
         # Selector de Modo de Cola
         frame_modo = ttk.Frame(self.sidebar, style="TFrame")
-        frame_modo.pack(fill="x", pady=5)
-        ttk.Label(frame_modo, text="Modo de Cola:", width=15).pack(side="left")
-        self.combo_modo = ttk.Combobox(frame_modo, values=["Sin Prioridad", "Con Prioridad (A > B)", "Con Zona de Seguridad"], state="readonly", width=14)
+        frame_modo.pack(fill="x", pady=8)
+        ttk.Label(frame_modo, text="Modo de Cola:", width=17, font=("Segoe UI", 11)).pack(side="left")
+        self.combo_modo = ttk.Combobox(frame_modo, values=["Sin Prioridad", "Con Prioridad (A > B)", "Con Zona de Seguridad"], 
+                                       state="readonly", width=16, font=("Segoe UI", 10))
         self.combo_modo.set("Sin Prioridad")
-        self.combo_modo.pack(side="left", padx=5)
+        self.combo_modo.pack(side="left", padx=5, ipady=2)
         
         crear_fila_simple(self.sidebar, "Prob. Cliente A (%):", "prob_a", "50.0", (10, 90))
 
         self.btn_run = tk.Button(self.sidebar, text="INICIAR SIMULACIÓN", command=self.start_sim, 
-                                bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 10, "bold"), 
-                                relief="flat", padx=20, pady=10, cursor="hand2")
-        self.btn_run.pack(pady=20, fill="x")
+                                 bg=COLOR_SUCCESS, fg=COLOR_BG, font=("Segoe UI", 12, "bold"), 
+                                 relief="flat", bd=0, activebackground=COLOR_ACCENT, activeforeground=COLOR_BG, 
+                                 padx=20, pady=12, cursor="hand2")
+        self.btn_run.pack(pady=25, fill="x")
 
         # --- Main: Dashboard de Estado ---
         self.dash_frame = ttk.Frame(self.main_content, style="TFrame")
@@ -162,9 +181,9 @@ class Simulador1PS_GUI:
 
         # --- Main: Representación Visual de Cola ---
         self.canvas_frame = ttk.Frame(self.main_content, style="Card.TFrame")
-        self.canvas_frame.pack(fill="x", pady=15, ipady=5)
+        self.canvas_frame.pack(fill="x", pady=15, ipady=8)
         
-        self.canvas_cola = tk.Canvas(self.canvas_frame, height=70, bg=COLOR_CARD, highlightthickness=0)
+        self.canvas_cola = tk.Canvas(self.canvas_frame, height=90, bg=COLOR_CARD, highlightthickness=0)
         self.canvas_cola.pack(fill="x", padx=20)
 
         # --- Main: Gráfico y Tabla ---
@@ -186,21 +205,21 @@ class Simulador1PS_GUI:
         self.canvas_graph = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
         self.canvas_graph.get_tk_widget().pack(expand=True, fill="both", padx=5, pady=5)
 
-        # Area Tabla
+        # Area Tabla (Treeview Ampliado y Espacioso)
         self.table_frame = ttk.Frame(self.bottom_frame, style="Card.TFrame")
         self.table_frame.pack(side="right", fill="both", expand=True)
 
         cols = ("Reloj", "Evento", "Detalle", "Estado")
         self.tree = ttk.Treeview(self.table_frame, columns=cols, show="headings", height=8)
-        self.tree.heading("Reloj", text="Reloj", anchor="w")
+        self.tree.heading("Reloj", text="Reloj", anchor="center")
         self.tree.heading("Evento", text="Evento", anchor="w")
         self.tree.heading("Detalle", text="Detalle", anchor="w")
         self.tree.heading("Estado", text="Estado", anchor="w")
         
-        self.tree.column("Reloj", width=60)
-        self.tree.column("Evento", width=120)
-        self.tree.column("Detalle", width=140)
-        self.tree.column("Estado", width=120)
+        self.tree.column("Reloj", width=90, anchor="center")
+        self.tree.column("Evento", width=160, anchor="w")
+        self.tree.column("Detalle", width=250, anchor="w")
+        self.tree.column("Estado", width=210, anchor="w")
 
         scrollbar = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -341,37 +360,37 @@ class Simulador1PS_GUI:
         
         self.canvas_cola.delete("all")
         
-        # Dibujar Secciones y Etiquetas
-        self.canvas_cola.create_text(250, 10, text="COLA DE ESPERA", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
-        self.canvas_cola.create_text(675, 10, text="ZONA DE SEGURIDAD", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
-        self.canvas_cola.create_text(875, 10, text="PUESTO DE SERVICIO", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
+        # Dibujar Secciones y Etiquetas (Aumentadas y centradas)
+        self.canvas_cola.create_text(250, 15, text="COLA DE ESPERA", fill=COLOR_TEXT, font=("Segoe UI", 10, "bold"))
+        self.canvas_cola.create_text(675, 15, text="ZONA DE SEGURIDAD", fill=COLOR_TEXT, font=("Segoe UI", 10, "bold"))
+        self.canvas_cola.create_text(875, 15, text="PUESTO DE SERVICIO", fill=COLOR_TEXT, font=("Segoe UI", 10, "bold"))
         
-        # Dibujar Cajas
-        self.canvas_cola.create_rectangle(600, 20, 750, 56, outline=COLOR_WARNING, dash=(4, 4), width=2)
-        self.canvas_cola.create_rectangle(800, 20, 950, 56, outline=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS, width=2)
+        # Dibujar Cajas (Aumentadas)
+        self.canvas_cola.create_rectangle(600, 30, 750, 70, outline=COLOR_WARNING, dash=(4, 4), width=2)
+        self.canvas_cola.create_rectangle(800, 30, 950, 70, outline=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS, width=2)
         
-        # Dibujar Clientes en Cola
+        # Dibujar Clientes en Cola (Diámetro 24px)
         sorted_queue = sorted(self.HC_A + self.HC_B)
         for idx, cid in enumerate(sorted_queue[:20]):
-            x = 560 - idx * 25
+            x = 560 - idx * 28
             if x < 10: break
             tipo = self.cliente_tipos.get(cid, 'B')
             color = COLOR_SUCCESS if (es_prioridad and tipo == 'A') else COLOR_ACCENT
-            self.canvas_cola.create_oval(x, 26, x+20, 46, fill=color, outline="")
-            self.canvas_cola.create_text(x+10, 36, text=f"C{cid}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
+            self.canvas_cola.create_oval(x, 38, x+24, 62, fill=color, outline="")
+            self.canvas_cola.create_text(x+12, 50, text=f"C{cid}", fill=COLOR_BG, font=("Segoe UI", 9, "bold"))
             
         if len(sorted_queue) > 20:
-            self.canvas_cola.create_text(15, 36, text=f"+{len(sorted_queue)-20}", fill=COLOR_TEXT, font=("Segoe UI", 10, "bold"))
+            self.canvas_cola.create_text(15, 50, text=f"+{len(sorted_queue)-20}", fill=COLOR_TEXT, font=("Segoe UI", 11, "bold"))
             
-        # Dibujar Cliente en ZS
+        # Dibujar Cliente en ZS (Diámetro 24px)
         if es_zs and self.zs:
-            self.canvas_cola.create_oval(665, 26, 685, 46, fill=COLOR_WARNING, outline="")
-            self.canvas_cola.create_text(675, 36, text=f"C{self.zs_cliente}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
+            self.canvas_cola.create_oval(663, 38, 687, 62, fill=COLOR_WARNING, outline="")
+            self.canvas_cola.create_text(675, 50, text=f"C{self.zs_cliente}", fill=COLOR_BG, font=("Segoe UI", 9, "bold"))
             
-        # Dibujar Cliente en PS
+        # Dibujar Cliente en PS (Diámetro 24px)
         if self.PS == 1 and hasattr(self, 'cliente_en_ps') and self.cliente_en_ps:
-            self.canvas_cola.create_oval(865, 26, 885, 46, fill=COLOR_ERROR, outline="")
-            self.canvas_cola.create_text(875, 36, text=f"C{self.cliente_en_ps}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
+            self.canvas_cola.create_oval(863, 38, 887, 62, fill=COLOR_ERROR, outline="")
+            self.canvas_cola.create_text(875, 50, text=f"C{self.cliente_en_ps}", fill=COLOR_BG, font=("Segoe UI", 9, "bold"))
 
         t_data, q_data = zip(*self.historial_cola)
         t_data_mins = [t / 60.0 for t in t_data]
@@ -387,7 +406,7 @@ class Simulador1PS_GUI:
         self.jugando = True
         self.reset_sim()
         self.update_ui()
-        self.btn_run.config(text="SIMULANDO...", state="disabled")
+        self.btn_run.config(text="SIMULANDO...", bg="#3A3A3A", fg="#777777", state="disabled")
         
         def loop():
             limite = self.val('limite')
@@ -580,7 +599,7 @@ class Simulador1PS_GUI:
                 time.sleep(0.08) # Animacion
 
             self.jugando = False
-            self.root.after(0, lambda: self.btn_run.config(text="INICIAR SIMULACIÓN", state="normal"))
+            self.root.after(0, lambda: self.btn_run.config(text="INICIAR SIMULACIÓN", bg=COLOR_SUCCESS, fg=COLOR_BG, state="normal"))
             self.root.after(0, lambda: messagebox.showinfo("Simulación Completa", f"Fin a los {self.format_time(self.reloj)} min"))
 
         threading.Thread(target=loop, daemon=True).start()
