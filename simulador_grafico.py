@@ -25,6 +25,10 @@ class Simulador1PS_GUI:
         # Variables de estado de simulación
         self.reloj = 0.0
         self.PS = 0
+        self.zs = 0
+        self.zs_cliente = 0
+        self.cliente_en_ps = 0
+        self.prox_llegada_ps = float('inf')
         self.S = 1
         self.Q = 0
         self.QA = 0
@@ -127,12 +131,13 @@ class Simulador1PS_GUI:
         ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
         crear_fila_simple(self.sidebar, "Paciencia Cola (m):", "paciencia", "10.00", (5, 20))
         crear_fila_simple(self.sidebar, "Cola Inicial:", "cola_inicial", "0", (0, 10))
+        crear_fila_simple(self.sidebar, "T. Traslado ZS (m):", "traslado_zs", "0.10", (0.05, 0.5))
         
         # Selector de Modo de Cola
         frame_modo = ttk.Frame(self.sidebar, style="TFrame")
         frame_modo.pack(fill="x", pady=5)
         ttk.Label(frame_modo, text="Modo de Cola:", width=15).pack(side="left")
-        self.combo_modo = ttk.Combobox(frame_modo, values=["Sin Prioridad", "Con Prioridad (A > B)"], state="readonly", width=14)
+        self.combo_modo = ttk.Combobox(frame_modo, values=["Sin Prioridad", "Con Prioridad (A > B)", "Con Zona de Seguridad"], state="readonly", width=14)
         self.combo_modo.set("Sin Prioridad")
         self.combo_modo.pack(side="left", padx=5)
         
@@ -151,6 +156,7 @@ class Simulador1PS_GUI:
         self.card_q = self.create_stat_card(self.dash_frame, "EN COLA", "0")
         self.card_qa = self.create_stat_card(self.dash_frame, "COLA A (ALT)", "0")
         self.card_qb = self.create_stat_card(self.dash_frame, "COLA B (BAJ)", "0")
+        self.card_zs = self.create_stat_card(self.dash_frame, "ZONA SEG.", "LIBRE")
         self.card_ps = self.create_stat_card(self.dash_frame, "PUESTO", "LIBRE")
         self.card_s = self.create_stat_card(self.dash_frame, "SERVIDOR", "TRABAJANDO")
 
@@ -158,7 +164,7 @@ class Simulador1PS_GUI:
         self.canvas_frame = ttk.Frame(self.main_content, style="Card.TFrame")
         self.canvas_frame.pack(fill="x", pady=15, ipady=5)
         
-        self.canvas_cola = tk.Canvas(self.canvas_frame, height=50, bg=COLOR_CARD, highlightthickness=0)
+        self.canvas_cola = tk.Canvas(self.canvas_frame, height=70, bg=COLOR_CARD, highlightthickness=0)
         self.canvas_cola.pack(fill="x", padx=20)
 
         # --- Main: Gráfico y Tabla ---
@@ -189,7 +195,7 @@ class Simulador1PS_GUI:
         self.tree.heading("Reloj", text="Reloj", anchor="w")
         self.tree.heading("Evento", text="Evento", anchor="w")
         self.tree.heading("Detalle", text="Detalle", anchor="w")
-        self.tree.heading("Estado", text="Estado [Q, PS, S]", anchor="w")
+        self.tree.heading("Estado", text="Estado", anchor="w")
         
         self.tree.column("Reloj", width=60)
         self.tree.column("Evento", width=120)
@@ -244,6 +250,10 @@ class Simulador1PS_GUI:
     def reset_sim(self):
         self.reloj = 0.0
         self.PS = 0
+        self.zs = 0
+        self.zs_cliente = 0
+        self.cliente_en_ps = 0
+        self.prox_llegada_ps = float('inf')
         self.S = 1
         self.Q = 0
         self.QA = 0
@@ -256,6 +266,7 @@ class Simulador1PS_GUI:
         self.tree.delete(*self.tree.get_children())
         
         es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
+        es_zs = (self.combo_modo.get() == "Con Zona de Seguridad")
         prob_a = self.val('prob_a') / 100.0 if es_prioridad else 0.0
 
         # Cargar cola inicial
@@ -264,6 +275,7 @@ class Simulador1PS_GUI:
             # El primer cliente pasa directamente al puesto de servicio
             self.cliente_id_counter = 1
             self.PS = 1
+            self.cliente_en_ps = 1
             tipo = 'A' if (es_prioridad and random.random() < prob_a) else 'B'
             self.cliente_tipos[1] = tipo
             self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
@@ -297,13 +309,18 @@ class Simulador1PS_GUI:
     def generar_tiempo_descanso(self): return random.uniform(self.val('desc_min'), self.val('desc_max'))
 
     def log(self, evento, detalle):
-        estado = f"Q={self.Q} PS={self.PS} S={self.S}"
+        es_zs = (self.combo_modo.get() == "Con Zona de Seguridad")
+        if es_zs:
+            estado = f"Q={self.Q} ZS={self.zs} PS={self.PS} S={self.S}"
+        else:
+            estado = f"Q={self.Q} PS={self.PS} S={self.S}"
         self.tree.insert("", "end", values=(self.format_time(self.reloj), evento, detalle, estado))
         self.tree.yview_moveto(1)
 
     def update_ui(self):
         self.card_reloj.config(text=self.format_time(self.reloj))
         es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
+        es_zs = (self.combo_modo.get() == "Con Zona de Seguridad")
         self.Q = self.QA + self.QB
         self.card_q.config(text=str(self.Q))
         
@@ -314,19 +331,47 @@ class Simulador1PS_GUI:
             self.card_qa.config(text="N/D")
             self.card_qb.config(text="N/D")
             
+        if es_zs:
+            self.card_zs.config(text=f"OCUPADA (C{self.zs_cliente})" if self.zs else "LIBRE", foreground=COLOR_WARNING if self.zs else COLOR_SUCCESS)
+        else:
+            self.card_zs.config(text="N/D", foreground=COLOR_TEXT)
+            
         self.card_ps.config(text="OCUPADO" if self.PS == 1 else "LIBRE", foreground=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS)
         self.card_s.config(text="TRABAJANDO" if self.S == 1 else "DESCANSO", foreground=COLOR_SUCCESS if self.S == 1 else COLOR_WARNING)
         
         self.canvas_cola.delete("all")
+        
+        # Dibujar Secciones y Etiquetas
+        self.canvas_cola.create_text(250, 10, text="COLA DE ESPERA", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
+        self.canvas_cola.create_text(675, 10, text="ZONA DE SEGURIDAD", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
+        self.canvas_cola.create_text(875, 10, text="PUESTO DE SERVICIO", fill=COLOR_TEXT, font=("Segoe UI", 9, "bold"))
+        
+        # Dibujar Cajas
+        self.canvas_cola.create_rectangle(600, 20, 750, 56, outline=COLOR_WARNING, dash=(4, 4), width=2)
+        self.canvas_cola.create_rectangle(800, 20, 950, 56, outline=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS, width=2)
+        
+        # Dibujar Clientes en Cola
         sorted_queue = sorted(self.HC_A + self.HC_B)
-        for i, cid in enumerate(sorted_queue[:30]):
-            x = 10 + i * 25
+        for idx, cid in enumerate(sorted_queue[:20]):
+            x = 560 - idx * 25
+            if x < 10: break
             tipo = self.cliente_tipos.get(cid, 'B')
             color = COLOR_SUCCESS if (es_prioridad and tipo == 'A') else COLOR_ACCENT
-            self.canvas_cola.create_oval(x, 10, x+20, 30, fill=color, outline="")
+            self.canvas_cola.create_oval(x, 26, x+20, 46, fill=color, outline="")
+            self.canvas_cola.create_text(x+10, 36, text=f"C{cid}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
             
-        if len(sorted_queue) > 30:
-            self.canvas_cola.create_text(800, 20, text=f"+{len(sorted_queue)-30}", fill=COLOR_TEXT, font=("Segoe UI", 12, "bold"))
+        if len(sorted_queue) > 20:
+            self.canvas_cola.create_text(15, 36, text=f"+{len(sorted_queue)-20}", fill=COLOR_TEXT, font=("Segoe UI", 10, "bold"))
+            
+        # Dibujar Cliente en ZS
+        if es_zs and self.zs:
+            self.canvas_cola.create_oval(665, 26, 685, 46, fill=COLOR_WARNING, outline="")
+            self.canvas_cola.create_text(675, 36, text=f"C{self.zs_cliente}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
+            
+        # Dibujar Cliente en PS
+        if self.PS == 1 and hasattr(self, 'cliente_en_ps') and self.cliente_en_ps:
+            self.canvas_cola.create_oval(865, 26, 885, 46, fill=COLOR_ERROR, outline="")
+            self.canvas_cola.create_text(875, 36, text=f"C{self.cliente_en_ps}", fill=COLOR_BG, font=("Segoe UI", 8, "bold"))
 
         t_data, q_data = zip(*self.historial_cola)
         t_data_mins = [t / 60.0 for t in t_data]
@@ -349,6 +394,7 @@ class Simulador1PS_GUI:
             self.log("INICIO", "Sistema listo")
             n_inicial = int(self.val('cola_inicial'))
             es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
+            es_zs = (self.combo_modo.get() == "Con Zona de Seguridad")
             if n_inicial > 0:
                 suffix1 = f" ({self.cliente_tipos[1]})" if es_prioridad else ""
                 self.log("Cola Inicial", f"Inicia con {n_inicial} clientes")
@@ -364,6 +410,9 @@ class Simulador1PS_GUI:
                     (self.prox_salida_serv, "SALIDA_S"),
                     (self.prox_regreso_serv, "REGRESO_S")
                 ]
+                if es_zs and self.prox_llegada_ps != float('inf'):
+                    eventos.append((self.prox_llegada_ps, "LLEGADA_ZS_PS"))
+                    
                 if self.abandonos_programados:
                     cid_min = min(self.abandonos_programados, key=self.abandonos_programados.get)
                     eventos.append((self.abandonos_programados[cid_min], ("ABANDONO", cid_min)))
@@ -383,42 +432,93 @@ class Simulador1PS_GUI:
                     self.cliente_tipos[cid] = tipo
                     suffix = f" ({tipo})" if es_prioridad else ""
                     
-                    if self.S == 0 or self.PS == 1:
-                        if tipo == 'A':
-                            self.HC_A.append(cid)
-                            self.QA += 1
+                    if es_zs:
+                        self.Q = self.QA + self.QB
+                        if self.Q == 0 and self.zs == 0 and self.PS == 0:
+                            self.zs = 1
+                            self.zs_cliente = cid
+                            self.prox_llegada_ps = self.reloj + self.val('traslado_zs')
+                            self.log("Llegada -> ZS", f"C{cid} directo a ZS")
                         else:
                             self.HC_B.append(cid)
                             self.QB += 1
-                        self.Q = self.QA + self.QB
-                        paciencia = self.val('paciencia')
-                        self.abandonos_programados[cid] = self.reloj + paciencia
-                        self.log("Llegada", f"C{cid}{suffix} a cola")
+                            self.Q = self.QA + self.QB
+                            paciencia = self.val('paciencia')
+                            self.abandonos_programados[cid] = self.reloj + paciencia
+                            self.log("Llegada -> Cola", f"C{cid} a cola")
                     else:
-                        self.PS = 1
+                        if self.S == 0 or self.PS == 1:
+                            if tipo == 'A':
+                                self.HC_A.append(cid)
+                                self.QA += 1
+                            else:
+                                self.HC_B.append(cid)
+                                self.QB += 1
+                            self.Q = self.QA + self.QB
+                            paciencia = self.val('paciencia')
+                            self.abandonos_programados[cid] = self.reloj + paciencia
+                            self.log("Llegada", f"C{cid}{suffix} a cola")
+                        else:
+                            self.PS = 1
+                            self.cliente_en_ps = cid
+                            self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
+                            self.log("Llegada -> Directo", f"C{cid}{suffix} atendido")
+                
+                elif ev == "LLEGADA_ZS_PS":
+                    cid = self.zs_cliente
+                    self.zs = 0
+                    self.zs_cliente = 0
+                    self.prox_llegada_ps = float('inf')
+                    self.PS = 1
+                    self.cliente_en_ps = cid
+                    
+                    if self.S == 1:
                         self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        self.log("Llegada -> Directo", f"C{cid}{suffix} atendido")
+                    else:
+                        self.prox_fin_serv = self.prox_regreso_serv + self.generar_tiempo_servicio()
+                        
+                    self.log("Llegada a PS", f"C{cid} llega al PS de ZS")
                 
                 elif ev == "FIN_SERV":
                     self.PS = 0
+                    self.cliente_en_ps = 0
                     self.prox_fin_serv = float('inf')
-                    self.Q = self.QA + self.QB
-                    if self.Q > 0:
-                        if self.HC_A:
-                            cid = self.HC_A.pop(0)
-                            self.QA -= 1
-                        else:
+                    
+                    if es_zs:
+                        self.Q = self.QA + self.QB
+                        if self.Q > 0:
                             cid = self.HC_B.pop(0)
                             self.QB -= 1
-                        self.Q = self.QA + self.QB
-                        
-                        if cid in self.abandonos_programados: del self.abandonos_programados[cid]
-                        self.PS = 1
-                        self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
-                        self.log("Fin Servicio -> Pasa", f"C{cid}{suffix} pasa al PS")
+                            self.Q = self.QA + self.QB
+                            
+                            if cid in self.abandonos_programados:
+                                del self.abandonos_programados[cid]
+                                
+                            self.zs = 1
+                            self.zs_cliente = cid
+                            self.prox_llegada_ps = self.reloj + self.val('traslado_zs')
+                            self.log("Fin Serv -> ZS", f"C{cid} de cola a ZS")
+                        else:
+                            self.log("Fin Servicio", "PS libre. ZS libre.")
                     else:
-                        self.log("Fin Servicio", "PS queda libre")
+                        self.Q = self.QA + self.QB
+                        if self.Q > 0:
+                            if self.HC_A:
+                                cid = self.HC_A.pop(0)
+                                self.QA -= 1
+                            else:
+                                cid = self.HC_B.pop(0)
+                                self.QB -= 1
+                            self.Q = self.QA + self.QB
+                            
+                            if cid in self.abandonos_programados: del self.abandonos_programados[cid]
+                            self.PS = 1
+                            self.cliente_en_ps = cid
+                            self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
+                            suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
+                            self.log("Fin Servicio -> Pasa", f"C{cid}{suffix} pasa al PS")
+                        else:
+                            self.log("Fin Servicio", "PS queda libre")
                 
                 elif ev == "SALIDA_S":
                     self.S = 0
@@ -435,23 +535,28 @@ class Simulador1PS_GUI:
                     self.S = 1
                     self.prox_salida_serv = self.generar_tiempo_trabajo()
                     self.prox_regreso_serv = float('inf')
-                    self.Q = self.QA + self.QB
-                    if self.PS == 0 and self.Q > 0:
-                        if self.HC_A:
-                            cid = self.HC_A.pop(0)
-                            self.QA -= 1
-                        else:
-                            cid = self.HC_B.pop(0)
-                            self.QB -= 1
-                        self.Q = self.QA + self.QB
-                        
-                        if cid in self.abandonos_programados: del self.abandonos_programados[cid]
-                        self.PS = 1
-                        self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
-                        self.log("Regreso Serv -> Pasa", f"C{cid}{suffix} pasa al PS")
-                    else:
+                    
+                    if es_zs:
                         self.log("Regreso Servidor", "Reanuda actividad")
+                    else:
+                        self.Q = self.QA + self.QB
+                        if self.PS == 0 and self.Q > 0:
+                            if self.HC_A:
+                                cid = self.HC_A.pop(0)
+                                self.QA -= 1
+                            else:
+                                cid = self.HC_B.pop(0)
+                                self.QB -= 1
+                            self.Q = self.QA + self.QB
+                            
+                            if cid in self.abandonos_programados: del self.abandonos_programados[cid]
+                            self.PS = 1
+                            self.cliente_en_ps = cid
+                            self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
+                            suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
+                            self.log("Regreso Serv -> Pasa", f"C{cid}{suffix} pasa al PS")
+                        else:
+                            self.log("Regreso Servidor", "Reanuda actividad")
                 
                 elif isinstance(ev, tuple) and ev[0] == "ABANDONO":
                     cid = ev[1]
