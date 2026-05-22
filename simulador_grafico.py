@@ -27,7 +27,11 @@ class Simulador1PS_GUI:
         self.PS = 0
         self.S = 1
         self.Q = 0
-        self.HC = []
+        self.QA = 0
+        self.QB = 0
+        self.HC_A = []
+        self.HC_B = []
+        self.cliente_tipos = {}
         self.abandonos_programados = {}
         self.cliente_id_counter = 0
         self.historial_cola = [(0, 0)]
@@ -123,6 +127,16 @@ class Simulador1PS_GUI:
         ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
         crear_fila_simple(self.sidebar, "Paciencia Cola (m):", "paciencia", "10.00", (5, 20))
         crear_fila_simple(self.sidebar, "Cola Inicial:", "cola_inicial", "0", (0, 10))
+        
+        # Selector de Modo de Cola
+        frame_modo = ttk.Frame(self.sidebar, style="TFrame")
+        frame_modo.pack(fill="x", pady=5)
+        ttk.Label(frame_modo, text="Modo de Cola:", width=15).pack(side="left")
+        self.combo_modo = ttk.Combobox(frame_modo, values=["Sin Prioridad", "Con Prioridad (A > B)"], state="readonly", width=14)
+        self.combo_modo.set("Sin Prioridad")
+        self.combo_modo.pack(side="left", padx=5)
+        
+        crear_fila_simple(self.sidebar, "Prob. Cliente A (%):", "prob_a", "50.0", (10, 90))
 
         self.btn_run = tk.Button(self.sidebar, text="INICIAR SIMULACIÓN", command=self.start_sim, 
                                 bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 10, "bold"), 
@@ -135,6 +149,8 @@ class Simulador1PS_GUI:
 
         self.card_reloj = self.create_stat_card(self.dash_frame, "RELOJ", "0.00")
         self.card_q = self.create_stat_card(self.dash_frame, "EN COLA", "0")
+        self.card_qa = self.create_stat_card(self.dash_frame, "COLA A (ALT)", "0")
+        self.card_qb = self.create_stat_card(self.dash_frame, "COLA B (BAJ)", "0")
         self.card_ps = self.create_stat_card(self.dash_frame, "PUESTO", "LIBRE")
         self.card_s = self.create_stat_card(self.dash_frame, "SERVIDOR", "TRABAJANDO")
 
@@ -221,7 +237,7 @@ class Simulador1PS_GUI:
 
     def val(self, key):
         val_str = self.entries[key].get()
-        if key == "cola_inicial":
+        if key in ("cola_inicial", "prob_a"):
             return float(val_str)
         return self.parse_to_seconds(val_str)
 
@@ -230,31 +246,46 @@ class Simulador1PS_GUI:
         self.PS = 0
         self.S = 1
         self.Q = 0
-        self.HC = []
+        self.QA = 0
+        self.QB = 0
+        self.HC_A = []
+        self.HC_B = []
+        self.cliente_tipos = {}
         self.abandonos_programados = {}
         self.cliente_id_counter = 0
         self.tree.delete(*self.tree.get_children())
         
+        es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
+        prob_a = self.val('prob_a') / 100.0 if es_prioridad else 0.0
+
         # Cargar cola inicial
         n_inicial = int(self.val('cola_inicial'))
         if n_inicial > 0:
             # El primer cliente pasa directamente al puesto de servicio
             self.cliente_id_counter = 1
             self.PS = 1
-            # Se genera su tiempo de servicio
+            tipo = 'A' if (es_prioridad and random.random() < prob_a) else 'B'
+            self.cliente_tipos[1] = tipo
             self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
             
             # Los restantes clientes van a la cola
             if n_inicial > 1:
-                self.Q = n_inicial - 1
                 paciencia = self.val('paciencia')
                 for i in range(2, n_inicial + 1):
-                    self.HC.append(i)
+                    tipo_i = 'A' if (es_prioridad and random.random() < prob_a) else 'B'
+                    self.cliente_tipos[i] = tipo_i
+                    if tipo_i == 'A':
+                        self.HC_A.append(i)
+                        self.QA += 1
+                    else:
+                        self.HC_B.append(i)
+                        self.QB += 1
                     self.abandonos_programados[i] = self.reloj + paciencia
                 self.cliente_id_counter = n_inicial
         else:
             self.prox_fin_serv = float('inf')
 
+        self.Q = self.QA + self.QB
         self.historial_cola = [(0.0, self.Q)]
         self.prox_llegada = self.generar_tiempo_llegada()
         self.prox_salida_serv = self.generar_tiempo_trabajo()
@@ -272,16 +303,30 @@ class Simulador1PS_GUI:
 
     def update_ui(self):
         self.card_reloj.config(text=self.format_time(self.reloj))
+        es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
+        self.Q = self.QA + self.QB
         self.card_q.config(text=str(self.Q))
+        
+        if es_prioridad:
+            self.card_qa.config(text=str(self.QA))
+            self.card_qb.config(text=str(self.QB))
+        else:
+            self.card_qa.config(text="N/D")
+            self.card_qb.config(text="N/D")
+            
         self.card_ps.config(text="OCUPADO" if self.PS == 1 else "LIBRE", foreground=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS)
         self.card_s.config(text="TRABAJANDO" if self.S == 1 else "DESCANSO", foreground=COLOR_SUCCESS if self.S == 1 else COLOR_WARNING)
         
         self.canvas_cola.delete("all")
-        for i in range(min(self.Q, 30)):
+        sorted_queue = sorted(self.HC_A + self.HC_B)
+        for i, cid in enumerate(sorted_queue[:30]):
             x = 10 + i * 25
-            self.canvas_cola.create_oval(x, 10, x+20, 30, fill=COLOR_ACCENT, outline="")
-        if self.Q > 30:
-            self.canvas_cola.create_text(800, 20, text=f"+{self.Q-30}", fill=COLOR_TEXT, font=("Segoe UI", 12, "bold"))
+            tipo = self.cliente_tipos.get(cid, 'B')
+            color = COLOR_SUCCESS if (es_prioridad and tipo == 'A') else COLOR_ACCENT
+            self.canvas_cola.create_oval(x, 10, x+20, 30, fill=color, outline="")
+            
+        if len(sorted_queue) > 30:
+            self.canvas_cola.create_text(800, 20, text=f"+{len(sorted_queue)-30}", fill=COLOR_TEXT, font=("Segoe UI", 12, "bold"))
 
         t_data, q_data = zip(*self.historial_cola)
         t_data_mins = [t / 60.0 for t in t_data]
@@ -303,11 +348,14 @@ class Simulador1PS_GUI:
             limite = self.val('limite')
             self.log("INICIO", "Sistema listo")
             n_inicial = int(self.val('cola_inicial'))
+            es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
             if n_inicial > 0:
+                suffix1 = f" ({self.cliente_tipos[1]})" if es_prioridad else ""
                 self.log("Cola Inicial", f"Inicia con {n_inicial} clientes")
-                self.log("Atención Inicial", "C1 pasa directo al PS")
+                self.log("Atención Inicial", f"C1{suffix1} pasa directo al PS")
                 for i in range(2, n_inicial + 1):
-                    self.log("Cola Inicial", f"C{i} entra a la cola")
+                    suffix_i = f" ({self.cliente_tipos[i]})" if es_prioridad else ""
+                    self.log("Cola Inicial", f"C{i}{suffix_i} entra a la cola")
             
             while self.reloj < limite:
                 eventos = [
@@ -329,27 +377,46 @@ class Simulador1PS_GUI:
                     self.prox_llegada = self.generar_tiempo_llegada()
                     self.cliente_id_counter += 1
                     cid = self.cliente_id_counter
+                    
+                    prob_a = self.val('prob_a') / 100.0 if es_prioridad else 0.0
+                    tipo = 'A' if (es_prioridad and random.random() < prob_a) else 'B'
+                    self.cliente_tipos[cid] = tipo
+                    suffix = f" ({tipo})" if es_prioridad else ""
+                    
                     if self.S == 0 or self.PS == 1:
-                        self.Q += 1
-                        self.HC.append(cid)
+                        if tipo == 'A':
+                            self.HC_A.append(cid)
+                            self.QA += 1
+                        else:
+                            self.HC_B.append(cid)
+                            self.QB += 1
+                        self.Q = self.QA + self.QB
                         paciencia = self.val('paciencia')
                         self.abandonos_programados[cid] = self.reloj + paciencia
-                        self.log("Llegada", f"C{cid} a cola")
+                        self.log("Llegada", f"C{cid}{suffix} a cola")
                     else:
                         self.PS = 1
                         self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        self.log("Llegada -> Directo", f"C{cid} atendido")
+                        self.log("Llegada -> Directo", f"C{cid}{suffix} atendido")
                 
                 elif ev == "FIN_SERV":
                     self.PS = 0
                     self.prox_fin_serv = float('inf')
+                    self.Q = self.QA + self.QB
                     if self.Q > 0:
-                        self.Q -= 1
-                        cid = self.HC.pop(0)
+                        if self.HC_A:
+                            cid = self.HC_A.pop(0)
+                            self.QA -= 1
+                        else:
+                            cid = self.HC_B.pop(0)
+                            self.QB -= 1
+                        self.Q = self.QA + self.QB
+                        
                         if cid in self.abandonos_programados: del self.abandonos_programados[cid]
                         self.PS = 1
                         self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        self.log("Fin Servicio -> Pasa", f"C{cid} pasa al PS")
+                        suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
+                        self.log("Fin Servicio -> Pasa", f"C{cid}{suffix} pasa al PS")
                     else:
                         self.log("Fin Servicio", "PS queda libre")
                 
@@ -368,23 +435,40 @@ class Simulador1PS_GUI:
                     self.S = 1
                     self.prox_salida_serv = self.generar_tiempo_trabajo()
                     self.prox_regreso_serv = float('inf')
+                    self.Q = self.QA + self.QB
                     if self.PS == 0 and self.Q > 0:
-                        self.Q -= 1
-                        cid = self.HC.pop(0)
+                        if self.HC_A:
+                            cid = self.HC_A.pop(0)
+                            self.QA -= 1
+                        else:
+                            cid = self.HC_B.pop(0)
+                            self.QB -= 1
+                        self.Q = self.QA + self.QB
+                        
                         if cid in self.abandonos_programados: del self.abandonos_programados[cid]
                         self.PS = 1
                         self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
-                        self.log("Regreso Serv -> Pasa", f"C{cid} pasa al PS")
+                        suffix = f" ({self.cliente_tipos[cid]})" if es_prioridad else ""
+                        self.log("Regreso Serv -> Pasa", f"C{cid}{suffix} pasa al PS")
                     else:
                         self.log("Regreso Servidor", "Reanuda actividad")
                 
                 elif isinstance(ev, tuple) and ev[0] == "ABANDONO":
                     cid = ev[1]
-                    if cid in self.HC:
-                        self.HC.remove(cid)
-                        self.Q -= 1
-                    del self.abandonos_programados[cid]
-                    self.log("Abandono Cola", f"C{cid} se fue")
+                    tipo = self.cliente_tipos.get(cid, 'B')
+                    if tipo == 'A':
+                        if cid in self.HC_A:
+                            self.HC_A.remove(cid)
+                            self.QA -= 1
+                    else:
+                        if cid in self.HC_B:
+                            self.HC_B.remove(cid)
+                            self.QB -= 1
+                    self.Q = self.QA + self.QB
+                    
+                    if cid in self.abandonos_programados: del self.abandonos_programados[cid]
+                    suffix = f" ({tipo})" if es_prioridad else ""
+                    self.log("Abandono Cola", f"C{cid}{suffix} se fue")
 
                 self.historial_cola.append((self.reloj, self.Q))
                 self.root.after(0, self.update_ui)
