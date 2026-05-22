@@ -75,10 +75,10 @@ class Simulador1PS_GUI:
             def rnd():
                 e_min.delete(0, tk.END)
                 e_max.delete(0, tk.END)
-                vmin = round(random.uniform(*rnd_min_range), 1)
-                vmax = round(random.uniform(vmin+1, rnd_max_range[1]), 1)
-                e_min.insert(0, str(vmin))
-                e_max.insert(0, str(vmax))
+                t_min = random.uniform(rnd_min_range[0] * 60, rnd_min_range[1] * 60)
+                t_max = random.uniform(t_min + 60, rnd_max_range[1] * 60)
+                e_min.insert(0, self.format_time(t_min))
+                e_max.insert(0, self.format_time(t_max))
                 
             tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 8, "bold"), relief="flat").pack(side="right")
 
@@ -93,31 +93,36 @@ class Simulador1PS_GUI:
             
             def rnd():
                 e.delete(0, tk.END)
-                e.insert(0, str(round(random.uniform(*rnd_range), 1)))
+                if key == "cola_inicial":
+                    e.insert(0, str(random.randint(int(rnd_range[0]), int(rnd_range[1]))))
+                else:
+                    t = random.uniform(rnd_range[0] * 60, rnd_range[1] * 60)
+                    e.insert(0, self.format_time(t))
                 
             tk.Button(frame, text="RND", command=rnd, bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 8, "bold"), relief="flat").pack(side="right", padx=(5, 0))
 
-        crear_fila_simple(self.sidebar, "Simulación Límite:", "limite", "100.0", (50, 300))
+        crear_fila_simple(self.sidebar, "Simulación Límite:", "limite", "100.00", (50, 300))
         ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
         
         crear_fila_rango(self.sidebar, "T. Llegada (m):", "lleg_min", "lleg_max", (1, 5), (6, 12))
-        self.entries['lleg_min'].insert(0, "3.0")
-        self.entries['lleg_max'].insert(0, "7.0")
+        self.entries['lleg_min'].insert(0, "3.00")
+        self.entries['lleg_max'].insert(0, "7.00")
         
         crear_fila_rango(self.sidebar, "T. Servicio (m):", "serv_min", "serv_max", (1, 3), (4, 8))
-        self.entries['serv_min'].insert(0, "2.0")
-        self.entries['serv_max'].insert(0, "5.0")
+        self.entries['serv_min'].insert(0, "2.00")
+        self.entries['serv_max'].insert(0, "5.00")
         
         crear_fila_rango(self.sidebar, "T. Trabajo S (m):", "trab_min", "trab_max", (15, 30), (35, 90))
-        self.entries['trab_min'].insert(0, "30.0")
-        self.entries['trab_max'].insert(0, "60.0")
+        self.entries['trab_min'].insert(0, "30.00")
+        self.entries['trab_max'].insert(0, "60.00")
         
         crear_fila_rango(self.sidebar, "T. Descanso S (m):", "desc_min", "desc_max", (2, 5), (6, 20))
-        self.entries['desc_min'].insert(0, "5.0")
-        self.entries['desc_max'].insert(0, "15.0")
+        self.entries['desc_min'].insert(0, "5.00")
+        self.entries['desc_max'].insert(0, "15.00")
         
         ttk.Separator(self.sidebar, orient='horizontal').pack(fill='x', pady=10)
-        crear_fila_simple(self.sidebar, "Paciencia Cola (m):", "paciencia", "10.0", (5, 20))
+        crear_fila_simple(self.sidebar, "Paciencia Cola (m):", "paciencia", "10.00", (5, 20))
+        crear_fila_simple(self.sidebar, "Cola Inicial:", "cola_inicial", "0", (0, 10))
 
         self.btn_run = tk.Button(self.sidebar, text="INICIAR SIMULACIÓN", command=self.start_sim, 
                                 bg=COLOR_ACCENT, fg=COLOR_BG, font=("Segoe UI", 10, "bold"), 
@@ -190,7 +195,35 @@ class Simulador1PS_GUI:
         lbl_val.pack(pady=(0, 10))
         return lbl_val
 
-    def val(self, key): return float(self.entries[key].get())
+    def parse_to_seconds(self, val_str):
+        try:
+            val_str = val_str.strip()
+            if "." in val_str:
+                parts = val_str.split(".")
+                minutes = int(parts[0]) if parts[0] else 0
+                sec_str = parts[1]
+                if len(sec_str) == 0:
+                    seconds = 0
+                elif len(sec_str) == 1:
+                    seconds = int(sec_str) * 10
+                else:
+                    seconds = int(sec_str[:2])
+                return float(minutes * 60 + seconds)
+            else:
+                return float(int(val_str) * 60)
+        except Exception:
+            return 0.0
+
+    def format_time(self, total_seconds):
+        minutes = int(total_seconds) // 60
+        secs = int(total_seconds) % 60
+        return f"{minutes}.{secs:02d}"
+
+    def val(self, key):
+        val_str = self.entries[key].get()
+        if key == "cola_inicial":
+            return float(val_str)
+        return self.parse_to_seconds(val_str)
 
     def reset_sim(self):
         self.reloj = 0.0
@@ -200,11 +233,30 @@ class Simulador1PS_GUI:
         self.HC = []
         self.abandonos_programados = {}
         self.cliente_id_counter = 0
-        self.historial_cola = [(0, 0)]
         self.tree.delete(*self.tree.get_children())
         
+        # Cargar cola inicial
+        n_inicial = int(self.val('cola_inicial'))
+        if n_inicial > 0:
+            # El primer cliente pasa directamente al puesto de servicio
+            self.cliente_id_counter = 1
+            self.PS = 1
+            # Se genera su tiempo de servicio
+            self.prox_fin_serv = self.reloj + self.generar_tiempo_servicio()
+            
+            # Los restantes clientes van a la cola
+            if n_inicial > 1:
+                self.Q = n_inicial - 1
+                paciencia = self.val('paciencia')
+                for i in range(2, n_inicial + 1):
+                    self.HC.append(i)
+                    self.abandonos_programados[i] = self.reloj + paciencia
+                self.cliente_id_counter = n_inicial
+        else:
+            self.prox_fin_serv = float('inf')
+
+        self.historial_cola = [(0.0, self.Q)]
         self.prox_llegada = self.generar_tiempo_llegada()
-        self.prox_fin_serv = float('inf')
         self.prox_salida_serv = self.generar_tiempo_trabajo()
         self.prox_regreso_serv = float('inf')
 
@@ -215,11 +267,11 @@ class Simulador1PS_GUI:
 
     def log(self, evento, detalle):
         estado = f"Q={self.Q} PS={self.PS} S={self.S}"
-        self.tree.insert("", "end", values=(f"{self.reloj:.2f}", evento, detalle, estado))
+        self.tree.insert("", "end", values=(self.format_time(self.reloj), evento, detalle, estado))
         self.tree.yview_moveto(1)
 
     def update_ui(self):
-        self.card_reloj.config(text=f"{self.reloj:.2f}")
+        self.card_reloj.config(text=self.format_time(self.reloj))
         self.card_q.config(text=str(self.Q))
         self.card_ps.config(text="OCUPADO" if self.PS == 1 else "LIBRE", foreground=COLOR_ERROR if self.PS == 1 else COLOR_SUCCESS)
         self.card_s.config(text="TRABAJANDO" if self.S == 1 else "DESCANSO", foreground=COLOR_SUCCESS if self.S == 1 else COLOR_WARNING)
@@ -232,10 +284,11 @@ class Simulador1PS_GUI:
             self.canvas_cola.create_text(800, 20, text=f"+{self.Q-30}", fill=COLOR_TEXT, font=("Segoe UI", 12, "bold"))
 
         t_data, q_data = zip(*self.historial_cola)
+        t_data_mins = [t / 60.0 for t in t_data]
         self.ax.clear()
         self.ax.set_facecolor(COLOR_CARD)
-        self.ax.plot(t_data, q_data, color=COLOR_ACCENT, linewidth=2)
-        self.ax.fill_between(t_data, q_data, color=COLOR_ACCENT, alpha=0.2)
+        self.ax.plot(t_data_mins, q_data, color=COLOR_ACCENT, linewidth=2)
+        self.ax.fill_between(t_data_mins, q_data, color=COLOR_ACCENT, alpha=0.2)
         self.ax.set_title("Evolución de la Cola", color=COLOR_ACCENT)
         self.canvas_graph.draw_idle()
 
@@ -243,11 +296,18 @@ class Simulador1PS_GUI:
         if self.jugando: return
         self.jugando = True
         self.reset_sim()
+        self.update_ui()
         self.btn_run.config(text="SIMULANDO...", state="disabled")
         
         def loop():
             limite = self.val('limite')
             self.log("INICIO", "Sistema listo")
+            n_inicial = int(self.val('cola_inicial'))
+            if n_inicial > 0:
+                self.log("Cola Inicial", f"Inicia con {n_inicial} clientes")
+                self.log("Atención Inicial", "C1 pasa directo al PS")
+                for i in range(2, n_inicial + 1):
+                    self.log("Cola Inicial", f"C{i} entra a la cola")
             
             while self.reloj < limite:
                 eventos = [
@@ -332,7 +392,7 @@ class Simulador1PS_GUI:
 
             self.jugando = False
             self.root.after(0, lambda: self.btn_run.config(text="INICIAR SIMULACIÓN", state="normal"))
-            self.root.after(0, lambda: messagebox.showinfo("Simulación Completa", f"Fin a los {self.reloj:.2f} min"))
+            self.root.after(0, lambda: messagebox.showinfo("Simulación Completa", f"Fin a los {self.format_time(self.reloj)} min"))
 
         threading.Thread(target=loop, daemon=True).start()
 
