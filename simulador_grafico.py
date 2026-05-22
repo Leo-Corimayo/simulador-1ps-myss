@@ -40,6 +40,8 @@ class Simulador1PS_GUI:
         self.cliente_id_counter = 0
         self.historial_cola = [(0, 0)]
         self.jugando = False
+        self.total_atendidos = 0
+        self.total_abandonos = 0
 
         self.setup_ui()
 
@@ -171,13 +173,15 @@ class Simulador1PS_GUI:
         self.dash_frame = ttk.Frame(self.main_content, style="TFrame")
         self.dash_frame.pack(fill="x")
 
-        self.card_reloj = self.create_stat_card(self.dash_frame, "RELOJ", "0.00")
-        self.card_q = self.create_stat_card(self.dash_frame, "EN COLA", "0")
-        self.card_qa = self.create_stat_card(self.dash_frame, "COLA A (ALT)", "0")
-        self.card_qb = self.create_stat_card(self.dash_frame, "COLA B (BAJ)", "0")
-        self.card_zs = self.create_stat_card(self.dash_frame, "ZONA SEG.", "LIBRE")
-        self.card_ps = self.create_stat_card(self.dash_frame, "PUESTO", "LIBRE")
-        self.card_s = self.create_stat_card(self.dash_frame, "SERVIDOR", "TRABAJANDO")
+        self.card_reloj = self.create_stat_card(self.dash_frame, "RELOJ", "0.00", COLOR_TEXT)
+        self.card_q = self.create_stat_card(self.dash_frame, "EN COLA", "0", COLOR_ACCENT)
+        self.card_qa = self.create_stat_card(self.dash_frame, "COLA A", "0", COLOR_SUCCESS)
+        self.card_qb = self.create_stat_card(self.dash_frame, "COLA B", "0", COLOR_ACCENT)
+        self.card_zs = self.create_stat_card(self.dash_frame, "ZONA SEG.", "LIBRE", COLOR_SUCCESS)
+        self.card_ps = self.create_stat_card(self.dash_frame, "PUESTO", "LIBRE", COLOR_SUCCESS)
+        self.card_s = self.create_stat_card(self.dash_frame, "SERVIDOR", "TRABAJANDO", COLOR_SUCCESS)
+        self.card_atendidos = self.create_stat_card(self.dash_frame, "ATENDIDOS", "0", COLOR_SUCCESS)
+        self.card_abandonos = self.create_stat_card(self.dash_frame, "ABANDONOS", "0", COLOR_ERROR)
 
         # --- Main: Representación Visual de Cola ---
         self.canvas_frame = ttk.Frame(self.main_content, style="Card.TFrame")
@@ -228,11 +232,11 @@ class Simulador1PS_GUI:
         scrollbar.pack(side="right", fill="y")
 
 
-    def create_stat_card(self, parent, title, value):
+    def create_stat_card(self, parent, title, value, color=COLOR_SUCCESS):
         frame = ttk.Frame(parent, style="Card.TFrame")
-        frame.pack(side="left", expand=True, fill="both", padx=5)
+        frame.pack(side="left", expand=True, fill="both", padx=4)
         ttk.Label(frame, text=title, style="Header.TLabel").pack(pady=(10, 0))
-        lbl_val = ttk.Label(frame, text=value, style="Stat.TLabel")
+        lbl_val = tk.Label(frame, text=value, bg=COLOR_CARD, fg=color, font=("Consolas", 18, "bold"))
         lbl_val.pack(pady=(0, 10))
         return lbl_val
 
@@ -282,6 +286,8 @@ class Simulador1PS_GUI:
         self.cliente_tipos = {}
         self.abandonos_programados = {}
         self.cliente_id_counter = 0
+        self.total_atendidos = 0
+        self.total_abandonos = 0
         self.tree.delete(*self.tree.get_children())
         
         es_prioridad = (self.combo_modo.get() == "Con Prioridad (A > B)")
@@ -342,6 +348,8 @@ class Simulador1PS_GUI:
         es_zs = (self.combo_modo.get() == "Con Zona de Seguridad")
         self.Q = self.QA + self.QB
         self.card_q.config(text=str(self.Q))
+        self.card_atendidos.config(text=str(self.total_atendidos))
+        self.card_abandonos.config(text=str(self.total_abandonos))
         
         if es_prioridad:
             self.card_qa.config(text=str(self.QA))
@@ -502,6 +510,7 @@ class Simulador1PS_GUI:
                     self.PS = 0
                     self.cliente_en_ps = 0
                     self.prox_fin_serv = float('inf')
+                    self.total_atendidos += 1
                     
                     if es_zs:
                         self.Q = self.QA + self.QB
@@ -579,6 +588,7 @@ class Simulador1PS_GUI:
                 
                 elif isinstance(ev, tuple) and ev[0] == "ABANDONO":
                     cid = ev[1]
+                    self.total_abandonos += 1
                     tipo = self.cliente_tipos.get(cid, 'B')
                     if tipo == 'A':
                         if cid in self.HC_A:
