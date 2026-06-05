@@ -1,249 +1,232 @@
 import random
 
-# Definición de nombres de eventos para legibilidad
 class Eventos:
-    LLEGADA_CLIENTE = "Llegada Cliente"
-    FIN_SERVICIO = "Fin de Servicio"
-    SALIDA_SERVIDOR = "Salida Servidor"
-    REGRESO_SERVIDOR = "Regreso Servidor"
-    ABANDONO_COLA = "Abandono"
+    LLEGADA_TOTEM = "Llegada Totem"
+    FIN_TOTEM = "Fin Totem"
+    ABANDONO_TOTEM = "Abandono Totem"
+    FIN_CONSULTORIO = "Fin Consultorio"
 
-class Simulacion1PS:
+class SimulacionDosEtapas:
     def __init__(self):
-        # 1. Variables de Estado
+        # Reloj y límites
         self.reloj = 0.0
-        self.PS = 0    # 0 = Libre, 1 = Ocupado
-        self.S = 1     # 1 = Trabajando, 0 = Ausente/Descansando
-        self.Q = 0
-        self.HC = []   # Lista de diccionarios que guarda id de cliente y hora exacta de llegada
+        self.limite_simulacion = 480.0  # 8 horas por defecto
         
+        # Parámetros del Tótem (Etapa 1)
+        self.tiempo_llegada_cte = 2.0  # 2 min constantes
+        self.tiempo_totem_min = 5.0
+        self.tiempo_totem_max = 6.0
+        self.paciencia_totem = 10.0
+        
+        # Parámetros de Consultorios (Etapa 2)
+        self.capacidad_sala = 10
+        self.tiempo_consulta_min = 15.0
+        self.tiempo_consulta_max = 20.0
+        self.num_consultorios = 2
+        
+        # Variables de estado - Etapa 1
+        self.totem_ocupado = False
+        self.totem_cliente = None
+        self.cola_totem = []  # Lista de dicts: {"id": int, "llegada": float}
+        self.abandonos_programados_totem = {}  # {cliente_id: tiempo_abandono}
+        
+        # Variables de estado - Etapa 2
+        self.cola_consultorios = []  # Lista de IDs de clientes en sala de espera
+        self.consultorios_ocupados = [False] * self.num_consultorios
+        self.consultorios_clientes = [None] * self.num_consultorios
+        
+        # Agenda de Eventos Futuros
+        self.prox_llegada_totem = 0.0  # El primer cliente llega en t=0.0 o t=2.0?
+        # La consigna dice "Los clientes llegan para obtener su turno cada 2 minutos (cte)".
+        # Generalmente, el primer cliente llega en t=2.0 o t=0.0. Vamos a programar la primera llegada a t=2.0.
+        self.prox_fin_totem = float('inf')
+        self.prox_fin_consultorios = [float('inf')] * self.num_consultorios
+        
+        # Contadores de estadísticas
         self.cliente_id_counter = 0
-
-        # Parámetros de la simulación
-        self.limite_simulacion = 0.0
-        self.tiempo_max_espera = 10.0  # Límite de paciencia en cola (ej. 10 min)
+        self.abandonos_totem = 0
+        self.abandonos_sala = 0
+        self.clientes_atendidos = 0
         
-        # 2. Lista de Eventos Futuros (Agenda)
-        # Se inician en infinito (float('inf')), indicando que no están programados
-        self.proxima_llegada_cliente = float('inf')
-        self.proximo_fin_servicio = float('inf')
-        self.proxima_salida_servidor = float('inf')
-        self.proximo_regreso_servidor = float('inf')
+    def generar_tiempo_totem(self):
+        return random.uniform(self.tiempo_totem_min, self.tiempo_totem_max)
         
-        # Abandonos programados: Diccionario {cliente_id: tiempo_abandono}
-        # Permite rastrear un abandono por cada cliente en cola
-        self.abandonos_programados = {}
-
-    # --- Generadores de tiempos aleatorios ---
-    def generar_tiempo_llegada(self):
-        return random.expovariate(1/5.0)  # Llega 1 cliente cada 5 min aprox
-
-    def generar_tiempo_servicio(self):
-        return random.uniform(2.0, 5.0)   # Tarda entre 2 y 5 min en atender
-
-    def generar_tiempo_trabajo(self):
-        return random.uniform(30.0, 90.0) # Trabaja entre 30 y 90 min antes de descansar
-
-    def generar_tiempo_descanso(self):
-        return random.uniform(5.0, 15.0)  # Descansa entre 5 y 15 min
-
-    # --- Inicialización ---
-    def init_simulacion(self, limite, q_inicial, ps_inicial, s_inicial):
+    def generar_tiempo_consulta(self):
+        return random.uniform(self.tiempo_consulta_min, self.tiempo_consulta_max)
+        
+    def init_simulacion(self, limite=480.0):
         self.limite_simulacion = limite
-        self.Q = q_inicial
-        self.PS = ps_inicial
-        self.S = s_inicial
         self.reloj = 0.0
-
+        self.cliente_id_counter = 0
+        self.abandonos_totem = 0
+        self.abandonos_sala = 0
+        self.clientes_atendidos = 0
+        
+        self.totem_ocupado = False
+        self.totem_cliente = None
+        self.cola_totem = []
+        self.abandonos_programados_totem = {}
+        
+        self.cola_consultorios = []
+        self.consultorios_ocupados = [False] * self.num_consultorios
+        self.consultorios_clientes = [None] * self.num_consultorios
+        
+        # Primera llegada a los 2 minutos
+        self.prox_llegada_totem = self.tiempo_llegada_cte
+        self.prox_fin_totem = float('inf')
+        self.prox_fin_consultorios = [float('inf')] * self.num_consultorios
+        
         print(f"\n--- Inicio Simulación (Límite: {limite} min) ---")
-
-        # Configurar estado inicial según los parámetros provistos
-        if self.Q > 0:
-            for _ in range(self.Q):
-                self.cliente_id_counter += 1
-                self.HC.append({"id": self.cliente_id_counter, "llegada": self.reloj})
-                self.abandonos_programados[self.cliente_id_counter] = self.reloj + self.tiempo_max_espera
-
-        if self.PS == 1:
-            self.proximo_fin_servicio = self.reloj + self.generar_tiempo_servicio()
-
-        if self.S == 1:
-            self.proxima_salida_servidor = self.reloj + self.generar_tiempo_trabajo()
-        else:
-            self.proximo_regreso_servidor = self.reloj + self.generar_tiempo_descanso()
-
-        # Programa la 1ra Llegada de Cliente
-        self.proxima_llegada_cliente = self.reloj + self.generar_tiempo_llegada()
-
-    # --- Búsqueda del Próximo Evento ---
+        
     def get_proximo_evento(self):
-        # Reunimos todos los eventos en una lista de tuplas (tiempo, nombre_evento)
         eventos = [
-            (self.proxima_llegada_cliente, Eventos.LLEGADA_CLIENTE),
-            (self.proximo_fin_servicio, Eventos.FIN_SERVICIO),
-            (self.proxima_salida_servidor, Eventos.SALIDA_SERVIDOR),
-            (self.proximo_regreso_servidor, Eventos.REGRESO_SERVIDOR)
+            (self.prox_llegada_totem, Eventos.LLEGADA_TOTEM),
+            (self.prox_fin_totem, Eventos.FIN_TOTEM)
         ]
         
-        # Buscar en la lista de abandonos cuál es el próximo en ocurrir
-        if self.abandonos_programados:
-            min_abandono_id = min(self.abandonos_programados, key=self.abandonos_programados.get)
-            evento_abandono_tuple = (Eventos.ABANDONO_COLA, min_abandono_id)
-            eventos.append((self.abandonos_programados[min_abandono_id], evento_abandono_tuple))
+        for i in range(self.num_consultorios):
+            eventos.append((self.prox_fin_consultorios[i], (Eventos.FIN_CONSULTORIO, i)))
             
-        # Filtrar los eventos que están en infinito y encontrar el de menor hora
+        if self.abandonos_programados_totem:
+            min_abandono_id = min(self.abandonos_programados_totem, key=self.abandonos_programados_totem.get)
+            eventos.append((self.abandonos_programados_totem[min_abandono_id], (Eventos.ABANDONO_TOTEM, min_abandono_id)))
+            
+        # Filtrar infinitos
         eventos_validos = [e for e in eventos if e[0] < float('inf')]
         if not eventos_validos:
             return None, None
             
         proximo_tiempo, evento = min(eventos_validos, key=lambda x: x[0])
         return proximo_tiempo, evento
-
-    # --- 4. Subrutinas por Evento ---
-    def rutina_llegada_cliente(self):
-        print(f"[{self.reloj:6.2f}] EVENTO: Llegada Cliente")
-        # Programar próxima llegada
-        self.proxima_llegada_cliente = self.reloj + self.generar_tiempo_llegada()
         
+    def rutina_llegada_totem(self):
+        self.prox_llegada_totem = self.reloj + self.tiempo_llegada_cte
         self.cliente_id_counter += 1
         cid = self.cliente_id_counter
         
-        # Lógica: Si S=0 o PS=1 -> sumar a Q, anotar HC y programar Abandono
-        if self.S == 0 or self.PS == 1:
-            self.Q += 1
-            self.HC.append({"id": cid, "llegada": self.reloj})
-            self.abandonos_programados[cid] = self.reloj + self.tiempo_max_espera
-            print(f"  -> Servidor ocupado/ausente. Cliente {cid} entra a la cola (Q={self.Q}).")
-        # Lógica: Si S=1 y PS=0 -> PS=1 y programar Fin Servicio
-        elif self.S == 1 and self.PS == 0:
-            self.PS = 1
-            self.proximo_fin_servicio = self.reloj + self.generar_tiempo_servicio()
-            print(f"  -> Servidor libre. Cliente {cid} pasa a ser atendido directamente.")
-            
-    def rutina_fin_servicio(self):
-        print(f"[{self.reloj:6.2f}] EVENTO: Fin de Servicio")
-        # Lógica: PS=0. 
-        self.PS = 0
-        self.proximo_fin_servicio = float('inf')
+        print(f"[{self.reloj:6.2f}] EVENTO: Llegada Cliente {cid} al Tótem")
         
-        # Lógica: Si Q>0 -> Q-1, PS=1, borrar su HC, cancelar su Abandono y programar Fin Servicio
-        if self.Q > 0:
-            self.Q -= 1
-            cliente = self.HC.pop(0) # Se atiende al primero en llegar (FIFO)
-            cid = cliente["id"]
-            self.PS = 1
+        if self.totem_ocupado:
+            self.cola_totem.append({"id": cid, "llegada": self.reloj})
+            self.abandonos_programados_totem[cid] = self.reloj + self.paciencia_totem
+            print(f"  -> Tótem ocupado. Cliente {cid} entra a la cola del Tótem (Q={len(self.cola_totem)}).")
+        else:
+            self.totem_ocupado = True
+            self.totem_cliente = cid
+            self.prox_fin_totem = self.reloj + self.generar_tiempo_totem()
+            print(f"  -> Tótem libre. Cliente {cid} comienza a ser atendido en el Tótem.")
             
-            # CANCELAR su evento de Abandono
-            if cid in self.abandonos_programados:
-                del self.abandonos_programados[cid]
+    def rutina_fin_totem(self):
+        cid = self.totem_cliente
+        print(f"[{self.reloj:6.2f}] EVENTO: Fin Servicio Tótem (Cliente {cid})")
+        
+        # Liberar Tótem
+        self.totem_ocupado = False
+        self.totem_cliente = None
+        self.prox_fin_totem = float('inf')
+        
+        # Pasar a la etapa 2: Consultorios
+        if len(self.cola_consultorios) < self.capacidad_sala:
+            # Hay asiento disponible en la sala
+            # Verificar si algún consultorio está libre de inmediato
+            consultorio_libre = -1
+            for i in range(self.num_consultorios):
+                if not self.consultorios_ocupados[i]:
+                    consultorio_libre = i
+                    break
+                    
+            if consultorio_libre != -1:
+                # Pasa directo a consulta
+                self.consultorios_ocupados[consultorio_libre] = True
+                self.consultorios_clientes[consultorio_libre] = cid
+                self.prox_fin_consultorios[consultorio_libre] = self.reloj + self.generar_tiempo_consulta()
+                print(f"  -> Cliente {cid} pasa directo al Consultorio {consultorio_libre+1}.")
+            else:
+                # Va a la sala de espera
+                self.cola_consultorios.append(cid)
+                print(f"  -> Cliente {cid} toma asiento en la sala de espera (Cola={len(self.cola_consultorios)}/10).")
+        else:
+            # Sala llena: abandona perdiendo el turno
+            self.abandonos_sala += 1
+            print(f"  -> [!] Sala de espera llena. Cliente {cid} abandona el lugar y pierde su turno.")
+            
+        # Atender al siguiente en la cola del Tótem si hay
+        if self.cola_totem:
+            siguiente = self.cola_totem.pop(0)
+            scid = siguiente["id"]
+            if scid in self.abandonos_programados_totem:
+                del self.abandonos_programados_totem[scid]
                 
-            self.proximo_fin_servicio = self.reloj + self.generar_tiempo_servicio()
-            espera = self.reloj - cliente['llegada']
-            print(f"  -> El Cliente {cid} deja la cola y entra a servicio. (Q={self.Q}). Esperó: {espera:.2f} min.")
-        else:
-            print("  -> No hay clientes esperando. El Puesto de Servicio queda libre.")
-
-    def rutina_salida_servidor(self):
-        print(f"[{self.reloj:6.2f}] EVENTO: Salida Servidor (Inicio Descanso)")
-        # Lógica: S=0. Programar Regreso Servidor.
-        self.S = 0
-        self.proxima_salida_servidor = float('inf')
-        tiempo_descanso = self.generar_tiempo_descanso()
-        self.proximo_regreso_servidor = self.reloj + tiempo_descanso
+            self.totem_ocupado = True
+            self.totem_cliente = scid
+            self.prox_fin_totem = self.reloj + self.generar_tiempo_totem()
+            print(f"  -> Cliente {scid} de la cola del Tótem pasa a ser atendido.")
+            
+    def rutina_abandono_totem(self, cid):
+        print(f"[{self.reloj:6.2f}] EVENTO: Abandono Fila Tótem (Cliente {cid})")
         
-        # Lógica: Si PS=1 -> pausar servicio sumando tiempo de descanso al Fin de Servicio
-        if self.PS == 1:
-            self.proximo_fin_servicio += tiempo_descanso
-            print(f"  -> El servidor está atendiendo. Pausa su tarea. Retomará en {tiempo_descanso:.2f} min.")
-        else:
-            print(f"  -> El servidor está libre y se va a descansar por {tiempo_descanso:.2f} min.")
-
-    def rutina_regreso_servidor(self):
-        print(f"[{self.reloj:6.2f}] EVENTO: Regreso Servidor (Fin Descanso)")
-        # Lógica: S=1. Programar próxima Salida Servidor.
-        self.S = 1
-        self.proximo_regreso_servidor = float('inf')
-        self.proxima_salida_servidor = self.reloj + self.generar_tiempo_trabajo()
-        
-        # Lógica: Si PS=0 y Q>0 -> Q-1, PS=1, cancelar Abandono, programar Fin Servicio
-        if self.PS == 0 and self.Q > 0:
-            self.Q -= 1
-            cliente = self.HC.pop(0)
-            cid = cliente["id"]
-            self.PS = 1
-            if cid in self.abandonos_programados:
-                del self.abandonos_programados[cid]
-            self.proximo_fin_servicio = self.reloj + self.generar_tiempo_servicio()
-            print(f"  -> Servidor retorna. Empieza a atender al Cliente {cid} de la cola.")
-        elif self.PS == 1:
-            print("  -> Servidor retorna y se reanuda el servicio que estaba pausado.")
-
-    def rutina_abandono_cola(self, cid):
-        print(f"[{self.reloj:6.2f}] EVENTO: Abandono Cola (Cliente {cid})")
-        # Lógica: Q-1. Eliminar al cliente específico del vector HC.
-        indice_a_remover = None
-        for i, c in enumerate(self.HC):
+        # Eliminar de la cola
+        indice = -1
+        for i, c in enumerate(self.cola_totem):
             if c["id"] == cid:
-                indice_a_remover = i
+                indice = i
                 break
                 
-        if indice_a_remover is not None:
-            self.HC.pop(indice_a_remover)
-            self.Q -= 1
-            print(f"  -> El Cliente {cid} perdió la paciencia y se fue. (Q={self.Q}).")
+        if indice != -1:
+            self.cola_totem.pop(indice)
+            self.abandonos_totem += 1
+            print(f"  -> Cliente {cid} perdió la paciencia y abandonó la fila del Tótem.")
             
-        # Limpiamos el evento de la lista de abandonos
-        if cid in self.abandonos_programados:
-            del self.abandonos_programados[cid]
-
-    # --- 3. Bucle Principal (Director) ---
+        if cid in self.abandonos_programados_totem:
+            del self.abandonos_programados_totem[cid]
+            
+    def rutina_fin_consultorio(self, idx):
+        cid = self.consultorios_clientes[idx]
+        print(f"[{self.reloj:6.2f}] EVENTO: Fin Consulta en Consultorio {idx+1} (Cliente {cid})")
+        
+        self.consultorios_ocupados[idx] = False
+        self.consultorios_clientes[idx] = None
+        self.prox_fin_consultorios[idx] = float('inf')
+        self.clientes_atendidos += 1
+        
+        # Si hay alguien en la sala de espera, entra
+        if self.cola_consultorios:
+            siguiente_cid = self.cola_consultorios.pop(0)
+            self.consultorios_ocupados[idx] = True
+            self.consultorios_clientes[idx] = siguiente_cid
+            self.prox_fin_consultorios[idx] = self.reloj + self.generar_tiempo_consulta()
+            print(f"  -> Cliente {siguiente_cid} sale de la sala de espera e ingresa al Consultorio {idx+1}.")
+            
     def ejecutar(self):
-        # Mientras el Reloj < Límite
         while self.reloj < self.limite_simulacion:
-            # Busca el evento con hora MENOR
-            prox_tiempo, evento_info = self.get_proximo_evento()
+            prox_t, ev_info = self.get_proximo_evento()
             
-            # Condición de corte por si no hay más eventos a futuro en el rango
-            if prox_tiempo is None or prox_tiempo > self.limite_simulacion:
+            if prox_t is None or prox_t > self.limite_simulacion:
                 break
                 
-            # Avanza el Reloj a esa hora
-            self.reloj = prox_tiempo
+            self.reloj = prox_t
             
-            # Ejecuta la función del evento
-            if isinstance(evento_info, tuple) and evento_info[0] == Eventos.ABANDONO_COLA:
-                self.rutina_abandono_cola(evento_info[1])
-            elif evento_info == Eventos.LLEGADA_CLIENTE:
-                self.rutina_llegada_cliente()
-            elif evento_info == Eventos.FIN_SERVICIO:
-                self.rutina_fin_servicio()
-            elif evento_info == Eventos.SALIDA_SERVIDOR:
-                self.rutina_salida_servidor()
-            elif evento_info == Eventos.REGRESO_SERVIDOR:
-                self.rutina_regreso_servidor()
-
+            if ev_info == Eventos.LLEGADA_TOTEM:
+                self.rutina_llegada_totem()
+            elif ev_info == Eventos.FIN_TOTEM:
+                self.rutina_fin_totem()
+            elif isinstance(ev_info, tuple):
+                if ev_info[0] == Eventos.ABANDONO_TOTEM:
+                    self.rutina_abandono_totem(ev_info[1])
+                elif ev_info[0] == Eventos.FIN_CONSULTORIO:
+                    self.rutina_fin_consultorio(ev_info[1])
+                    
         print(f"\n--- Fin Simulación (Reloj: {self.reloj:.2f} / Límite: {self.limite_simulacion}) ---")
-        print(f"Estado final -> Q={self.Q}, PS={self.PS}, S={self.S}")
+        print(f"Abandonos en Fila del Tótem: {self.abandonos_totem}")
+        print(f"Abandonos en Sala de Espera (Sin Asiento): {self.abandonos_sala}")
+        if self.abandonos_totem > self.abandonos_sala:
+            print("Se producen más abandonos en: a. En la fila del tótem para obtener el turno")
+        elif self.abandonos_sala > self.abandonos_totem:
+            print("Se producen más abandonos en: b. En la sala de espera de los 2 consultorios")
+        else:
+            print("Se produce la misma cantidad de abandonos en ambos lugares")
 
 if __name__ == "__main__":
-    sim = Simulacion1PS()
-    
-    print("=== Configuración de la Simulación ===")
-    try:
-        limite_input = input("Límite de simulación en minutos [Presiona Enter para 100]: ")
-        limite = float(limite_input) if limite_input else 100.0
-        
-        q_ini_input = input("Tamaño inicial de cola (Q) [Presiona Enter para 0]: ")
-        q_ini = int(q_ini_input) if q_ini_input else 0
-        
-        ps_ini_input = input("Estado inicial del PS (0=Libre, 1=Ocupado) [Presiona Enter para 0]: ")
-        ps_ini = int(ps_ini_input) if ps_ini_input else 0
-        
-        s_ini_input = input("Presencia del servidor (0=Ausente, 1=Trabajando) [Presiona Enter para 1]: ")
-        s_ini = int(s_ini_input) if s_ini_input else 1
-    except ValueError:
-        print("\n[!] Valores inválidos, se usarán los valores por defecto.")
-        limite, q_ini, ps_ini, s_ini = 100.0, 0, 0, 1
-
-    sim.init_simulacion(limite, q_ini, ps_ini, s_ini)
+    sim = SimulacionDosEtapas()
+    sim.init_simulacion(480.0)
     sim.ejecutar()
